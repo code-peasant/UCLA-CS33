@@ -1,0 +1,152 @@
+2.
+I used a shell script to do all the work at the same time, please check
+out the compile.sh file attached.
+Then run
+curl http://localhost:12543/foo.txt
+curl http://localhost:12544/foo.txt
+curl http://localhost:12545/foo.txt
+
+All three servers work normally.
+
+3.
+For strong stack protection method:
+The following is the backtrace:
+#0  0x00007ffff6db1128 in ?? () from /lib64/libgcc_s.so.1
+#1  0x00007ffff6db2029 in _Unwind_Backtrace () from /lib64/libgcc_s.so.1
+#2  0x00007ffff76e50a6 in backtrace () from /lib64/libc.so.6
+#3  0x00007ffff7650e24 in __libc_message () from /lib64/libc.so.6
+#4  0x00007ffff76e8a57 in __fortify_fail () from /lib64/libc.so.6
+#5  0x00007ffff76e8a20 in __stack_chk_fail () from /lib64/libc.so.6
+#6  0x0000000000405092 in read_config (filename=<optimized out>)
+    at thttpd.c:1190
+#7  0x7562656400677562 in ?? ()
+#8  0x0067756265640067 in ?? ()
+#9  0x6564006775626564 in ?? ()
+#10 0x7562656400677562 in ?? ()
+#11 0x0067756265640067 in ?? ()
+#12 0x6564006775626564 in ?? ()
+#13 0x7562656400677562 in ?? ()
+#14 0x0067756265640067 in ?? ()
+#15 0x6564006775626564 in ?? ()
+#16 0x7562656400677562 in ?? ()
+#17 0x0067756265640067 in ?? ()
+#18 0x6564006775626564 in ?? ()
+#19 0x7562656400677562 in ?? ()
+#20 0x0067756265640067 in ?? ()
+#21 0x6564006775626564 in ?? ()
+#22 0x7562656400677562 in ?? ()
+#23 0x0067756265640067 in ?? ()
+#24 0x6564006775626564 in ?? ()
+#25 0x0000000000677562 in ?? ()
+#26 0x0000000000000000 in ?? ()
+
+These are the lines where the machine instructions went wrong, the xor operation caused an jump to call function
+__stack_chk_fail, and this function will give us the segementation fault.
+0x0000000000404f64 <read_config+1236>:       64 48 33 04 25 28 00 00 00      xor    %fs:0x28,%rax
+0x0000000000404f6d <read_config+1245>:       0f 85 1a 01 00 00       jne    0x40508d <read_config+1533>
+0x000000000040508d <read_config+1533>:       e8 6e d4 ff ff  callq  0x402500 <__stack_chk_fail@plt>
+ 
+As a result, we can see that it is because of "xor %fs:0x28,%rax" instruction that crashed the program. $fs register will store Thread Local Storage, in other words, it holds stack information for this particular thread. As a result,
+by looking at this information, the program will be able to detect canaries changes and thus throw out exceptions if the stack is exploited.
+
+For AddressSanitizer method:
+#0  0x00007ffff7073128 in ?? () from /lib64/libgcc_s.so.1
+#1  0x00007ffff7074029 in _Unwind_Backtrace () from /lib64/libgcc_s.so.1
+#2  0x000000000048a466 in __sanitizer::BufferedStackTrace::SlowUnwindStack (this=0x7fffffffbd60, pc=4564072,
+    max_depth=<optimized out>) at ../../../../gcc-5.2.0/libsanitizer/sanitizer_common/sanitizer_unwind_posix_libcdep.cc:113
+#3  0x00000000004868e2 in __asan::GetStackTraceWithPcBpAndContext (fast=false, context=0x0, bp=140737488342560,
+    pc=<optimized out>, max_depth=256, stack=<optimized out>) at ../../../../gcc-5.2.0/libsanitizer/asan/asan_stack.h:43
+#4  __asan_report_error (pc=<optimized out>, bp=bp@entry=140737488342560, sp=sp@entry=140737488340432,
+    addr=addr@entry=140737488342724, is_write=is_write@entry=0, access_size=access_size@entry=301) at ../../../../gcc-5.2.0/libsanitizer/asan/asan_r	eport.cc:1006
+#5  0x000000000045a483 in __interceptor_strchr (str=str@entry=0x7fffffffce60 "debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug debug de"...,c=c@entry=35) at ../../../../gcc-5.2.0/libsanitizer/asan/asan_interceptors.cc:430
+#6  0x00000000004b1e51 in read_config (filename=<optimized out>) at thttpd.c:1018
+#7  0x6564206775626564 in ?? ()
+#8  0x7562656420677562 in ?? ()
+#9  0x2067756265642067 in ?? ()
+#10 0x6564206775626564 in ?? ()
+#11 0x7562656420677562 in ?? ()
+#12 0x2067756265642067 in ?? ()
+#13 0x6564206775626564 in ?? ()
+#14 0x7562656420677562 in ?? ()
+#15 0x2067756265642067 in ?? ()
+#16 0x6564206775626564 in ?? ()
+#17 0x000000000a677562 in ?? ()
+#18 0x0000000000408200 in ?? ()
+#19 0x0000000000000000 in ?? ()
+
+The following are the last machine instructions before the program crashed:
+0x00000000004b1e4c      1018            if ( ( cp = strchr( line, '#' ) ) != (char*) 0 )
+0x00000000004b1e43 <read_config+179>:        48 8b 3c 24     mov    (%rsp),%rdi
+0x00000000004b1e47 <read_config+183>:        be 23 00 00 00  mov    $0x23,%esi
+0x00000000004b1e4c <read_config+188>:        e8 3f 85 fa ff  callq  0x45a390 <__interceptor_strchr(char const*, int)>
+0x00000000004b1e51 <read_config+193>:        48 85 c0        test   %rax,%rax
+0x00000000004b1e54 <read_config+196>:        74 24   je     0x4b1e7a <read_config+234>
+After calling the procedure __interceptor_strchr, the program crashes. As a result, I think it's calling this
+procedure that causes the crash. And the reason is probably that this procedure invokes address sanitizer and
+address sanitizer identifies an invalid writting into memory and causes the crash.
+
+For No Protection Method:
+Below is the backtrace:
+#0  0x0000000000404dcb in read_config (filename=<optimized out>) at thttpd.c:1190
+#1  0x7562656400677562 in ?? ()
+#2  0x0067756265640067 in ?? ()
+#3  0x6564006775626564 in ?? ()
+#4  0x7562656400677562 in ?? ()
+#5  0x0067756265640067 in ?? ()
+#6  0x6564006775626564 in ?? ()
+#7  0x7562656400677562 in ?? ()
+#8  0x0067756265640067 in ?? ()
+#9  0x6564006775626564 in ?? ()
+#10 0x7562656400677562 in ?? ()
+#11 0x0067756265640067 in ?? ()
+#12 0x6564006775626564 in ?? ()
+#13 0x7562656400677562 in ?? ()
+#14 0x0067756265640067 in ?? ()
+#15 0x6564006775626564 in ?? ()
+#16 0x7562656400677562 in ?? ()
+#17 0x0067756265640067 in ?? ()
+#18 0x6564006775626564 in ?? ()
+#19 0x0000000000677562 in ?? ()
+#20 0x0000000000000000 in ?? ()
+
+This is the machine code that leads to the crash
+0x0000000000404dcb <read_config+1227>:       c3      retq
+By looking at values in registers, we know that:
+%rsp = 0x7fffffffd058
+M8[0x7fffffffd058] = 0x00677562
+If we translate the above byte strings into characters using ASCII Table, then we get "gub", because this
+is a little endian machine, as a result, what we really get is "bug". This is exactly the text fragment
+in config.txt. Moreover, the reason that this leads to a crash is that "0x00677562" can not be interpreted
+as valid machine instructions, as a result, we get a segmentation fault.
+8.
+The ps method uses canaries to protect the stack, in other words, it set certain length of bytes in front of and behind
+the memory allocated. Then after reading and writing, it will check if the canaries are still
+the same. If it's not the same, then throw out exceptions. The as method, uses address sanitizer to detect
+overflow. In other words, it allocate shadow memories to keep track of the memory allocated. Only these memory
+that are allocated can be writen. If it detects that some forbidden memory is writed, which can be detected
+through shadow memory, then it will throw out exceptions.
+9.
+I attached my config.txt in the submission.
+I use the injection code method to exploit the stack.
+1). Figure out the stack size by giving an extremely long string, (here I used a string of length around 300 characters)
+to cause a segmentation fault. Then use GDB and display $rsp to figure out the highest and lowest addresses $rsp has been
+set to. On my computer, these are 
+0x7fffffffd068
+0x7fffffffcfd0
+respectively. Do a simple computation, we know that the stack capacity should be 152 bytes.
+2) Prepare the config.txt for the attack. I first choose to use "port=" as the start of config.txt because this is one of
+the options that read_config will accept and will read what's after "port=". Then I figured out that the machine instructions
+to delete a file are
+
+mov $87,%rax
+mov (address),%rdi
+syscall
+
+The (address) here should be the starting address of the name of the file I want to delete followed by "\0" character. Thus
+we also need the string "target.txt\0"
+3) Choose the return address of machine instructions as 0x7fffffffd020, and the address of "target.txt\0" string starting at
+0x7fffffffcfd5, make a .s file and look at its objdump and translate it into raw strings by applying hex2raw. Put "target.txt" and raw strings for
+"\0" into config.txt. Also change the formate of return address to fit the little endian machine. Then adding "0" characters to
+fill the blank
+4)
+with r -p 12544 -D -C config.txt, I saw that it successfully delete target.txt

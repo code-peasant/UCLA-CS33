@@ -1,0 +1,30 @@
+Name: Huiwen Zheng
+UCLA ID: 804326091
+
+1.At line 136 of the trace file, the operation lea 0x0(,%rbp,4),%rax
+should cause this problem, because before it, the result is correct.
+After that, the result in %rbp was multiplied by 4 and thus caused a
+overflow. As a result, the answer is incorrect.
+2.2305843009213693951 is equivalent to 2^61-1. In the source file
+in data.c for defining arith_driver, there is a Lisp definition
+at line 3678, which defines how to define most-positive-fixnum. Its
+documentation says that this should be the largest value that is
+representable in a Lisp integer. Then, in lisp.h, at line 692, we
+can see the definition of most_positive_fixnum, which says should
+be EMACS_INT_MAX>>INTTYPEBITS
+GCTYPEBITS=3
+INTTYPEBITS=GCYPEBITS-1
+MOST_POSITIVE_FIXNUM (EMACS_INT_MAX >> INTYPEBITS)
+3.After we multiply these two numbers, according to what we said in
+previous questions, we will only take the last 62 bits. The last 62
+bits happen to be 1
+4.5. Neither one of them will give any difference because the
+implementation of emacs multiplication will first cast the two
+numbers to unsigned and then multiply, mask them, and then cast
+back into signed. As a result, the two methods to detect overflow
+won't help much.
+6.In this case, we don't need to cast the numbers into unsigned and
+then do the multiplication because fwrapv will deal with overflow
+for us.
+7.It should be really significant because the casting and multiplication
+approach consumes a lot of resources.

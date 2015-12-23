@@ -1,0 +1,4 @@
+1.download the file and use tar -zxvf to unzip the files
+2.call make seq and I get the result that FUNC TIME is 0.5
+3.call make clean
+4.emacs func.c and read the code in the source file

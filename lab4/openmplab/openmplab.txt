@@ -1,0 +1,15 @@
+1.download the file and use tar -zxvf to unzip the files
+2.call make seq, ./seq, and I get the result that FUNC TIME is 0.5
+3.call make clean
+4.call make seq GPROF=1, gprof seq|less, and read the diagnosis result
+5.I identified that the bottleneck should be func1
+6.emacs func.c and read the code in the source file
+7.I decided to change the two major for loops in func1 into multithreading
+version
+8.Because the counters i,j, and variables index_X, index_Y are declared before
+these two loops, and they will be assigned to different values in different
+threads, as a result, I decided to make them private
+9.make clean, then make omp, call ./omp, the FUNC TIME reduced to 0.1.
+10.make check, the program returned silently.
+11.make clean, then make omp MTRACE=1, call make checkmem, returned "memory not
+freed".

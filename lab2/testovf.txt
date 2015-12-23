@@ -1,0 +1,55 @@
+Below is the excerpt with -O2 option
+------------------------------------
+xorl %eax, %eax
+ret
+
+Below is the excerpt with -O2 -fsanitize=undefined option
+---------------------------------------------------------
+testovf:
+	pushq	%rbp
+	pushq	%rbx
+	movabsq	$9223372036854775807, %rdx
+	subq	$8, %rsp
+	movq	big(%rip), %rbx
+	movq	%rbx, %rbp
+	addq	%rdx, %rbp
+	jo	.L6
+.L2:
+	cmpq	%rbp, %rbx
+	setg	%al
+	addq	$8, %rsp
+	popq	%rbx
+	popq	%rbp
+	ret
+.L6:
+	movq	%rbx, %rsi
+	movl	$.Lubsan_data0, %edi
+	call	__ubsan_handle_add_overflow
+	jmp	.L2
+
+Below is the excerpt with -O2 -fwrapv option
+--------------------------------------------
+testovf:
+	movq	big(%rip), %rdx
+	movabsq	$9223372036854775807, %rax
+	addq	%rdx, %rax
+	cmpq	%rax, %rdx
+	setg	%al
+	ret
+
+Differences:
+With the -O2 option, the compiler will simply ignore the
+overflow cases. As a result, without overflow, the result
+should always return 0. This is reflected in its machine
+code, which simply sets %eax to 0 and returns it.
+
+With the -O2 -fsanitize=undefined option, under potential
+overflow, the function will call __ubsan_handle_add_overflow,
+this function will probably handle the addition overflow.
+
+With -O2 -fwrapv option, in the case of overflow, the function
+won't call exception handling function, instead, it compares
+the result with the numbers to add, if the result leads to a
+overflow, the function will set the lowest byte of the return
+value to 1
+
